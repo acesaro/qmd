@@ -46,7 +46,7 @@ qmd cleanup                                                 # Clean database and
 Compile the `qmd` CLI binary:
 
 ```sh
-go build -tags "sqlite_fts5" -mod=vendor -o qmd ./cmd/qmd
+make build  # equivalent to: go build -tags "sqlite_fts5" -mod=vendor -o qmd ./cmd/qmd
 ```
 
 ## Tests
@@ -54,7 +54,7 @@ go build -tags "sqlite_fts5" -mod=vendor -o qmd ./cmd/qmd
 Run all unit and integration tests:
 
 ```sh
-go test -tags "sqlite_fts5" -mod=vendor -v ./...
+make test   # equivalent to: go test -tags "sqlite_fts5" -mod=vendor -v ./...
 ```
 
 ## Architecture
