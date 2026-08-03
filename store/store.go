@@ -317,6 +317,56 @@ func (s *Store) RebuildDocumentFTS(documentId int) error {
 	return tx.Commit()
 }
 
+func (s *Store) RunUpdate(targetColl string, onProgress func(ReindexProgress)) (map[string]*ReindexResult, error) {
+	// First discover/sync GenAI harnesses to memory collections
+	if err := DiscoverAndSyncHarnesses(); err != nil {
+		// Log error but continue
+		fmt.Fprintf(os.Stderr, "Warning: failed to sync memory harnesses: %v\n", err)
+	}
+
+	// Reload config in case DiscoverAndSyncHarnesses added collections
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Sync config to database
+	if err := s.SyncConfigToDb(cfg); err != nil {
+		return nil, fmt.Errorf("failed to sync config to DB: %w", err)
+	}
+
+	var collectionsToUpdate []string
+	if targetColl != "" {
+		if _, ok := cfg.Collections[targetColl]; !ok {
+			return nil, fmt.Errorf("collection %q not found in configuration", targetColl)
+		}
+		collectionsToUpdate = append(collectionsToUpdate, targetColl)
+	} else {
+		for name := range cfg.Collections {
+			collectionsToUpdate = append(collectionsToUpdate, name)
+		}
+	}
+
+	results := make(map[string]*ReindexResult)
+	for _, name := range collectionsToUpdate {
+		coll := cfg.Collections[name]
+		res, err := s.ReindexCollection(
+			coll.Path,
+			coll.Pattern,
+			name,
+			coll.Ignore,
+			onProgress,
+		)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to index collection '%s': %v\n", name, err)
+			continue
+		}
+		results[name] = res
+	}
+
+	return results, nil
+}
+
 func (s *Store) ReindexCollection(
 	collectionPath string,
 	globPattern string,

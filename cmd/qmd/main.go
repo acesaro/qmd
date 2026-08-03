@@ -5,8 +5,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/acesaro/qmd/config"
 	"github.com/acesaro/qmd/formatter"
@@ -77,6 +79,7 @@ func printUsage() {
 	fmt.Println("  get <path|docid>         Retrieve document content")
 	fmt.Println("  search <query>           Search indexed files")
 	fmt.Println("  mcp                      Start MCP server (stdio/HTTP)")
+	fmt.Println("  mcp install              Register QMD MCP server with Copilot, Claude Desktop/Code, Cursor, pi, agy")
 	fmt.Println("  cleanup                  Clean database and vacuum")
 }
 
@@ -245,48 +248,31 @@ func handleDoctor(args []string) {
 }
 
 func handleUpdate(args []string) {
-	s, cfg, _, _ := getStoreAndConfig()
+	s, _, _, _ := getStoreAndConfig()
 	defer s.Close()
-
-	// Resync config
-	s.SyncConfigToDb(cfg)
 
 	targetColl := ""
 	if len(args) > 0 {
 		targetColl = args[0]
 	}
 
-	var collectionsToUpdate []string
-	if targetColl != "" {
-		if _, ok := cfg.Collections[targetColl]; !ok {
-			fmt.Fprintf(os.Stderr, "Collection %q not found in configuration\n", targetColl)
-			os.Exit(1)
-		}
-		collectionsToUpdate = append(collectionsToUpdate, targetColl)
-	} else {
-		for name := range cfg.Collections {
-			collectionsToUpdate = append(collectionsToUpdate, name)
-		}
+	results, err := s.RunUpdate(targetColl, func(info store.ReindexProgress) {
+		fmt.Printf("\r  Scanning [%d/%d] %s", info.Current, info.Total, info.File)
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Update failed: %v\n", err)
+		os.Exit(1)
 	}
 
-	for _, name := range collectionsToUpdate {
-		coll := cfg.Collections[name]
-		fmt.Printf("Updating collection '%s'...\n", name)
+	fmt.Println("")
+	var sortedNames []string
+	for name := range results {
+		sortedNames = append(sortedNames, name)
+	}
+	sort.Strings(sortedNames)
 
-		res, err := s.ReindexCollection(
-			coll.Path,
-			coll.Pattern,
-			name,
-			coll.Ignore,
-			func(info store.ReindexProgress) {
-				fmt.Printf("\r  Scanning [%d/%d] %s", info.Current, info.Total, info.File)
-			},
-		)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "\nFailed to index collection '%s': %v\n", name, err)
-			continue
-		}
-		fmt.Println("")
+	for _, name := range sortedNames {
+		res := results[name]
 		fmt.Printf("%s✓%s Collection '%s' updated successfully\n", cGreen, cReset, name)
 		fmt.Printf("  Indexed:   %d files\n", res.Indexed)
 		fmt.Printf("  Updated:   %d files\n", res.Updated)
@@ -1098,6 +1084,7 @@ func handleCleanup(args []string) {
 
 func handleMcp(args []string) {
 	isHttp := false
+	isInstall := false
 	port := 8181
 	host := "localhost"
 
@@ -1114,6 +1101,8 @@ func handleMcp(args []string) {
 		arg := args[i]
 		if arg == "--http" {
 			isHttp = true
+		} else if arg == "--install" || arg == "install" {
+			isInstall = true
 		} else if (arg == "--port" || arg == "-p") && i+1 < len(args) {
 			port, _ = strconv.Atoi(args[i+1])
 			i++
@@ -1123,8 +1112,45 @@ func handleMcp(args []string) {
 		}
 	}
 
+	if isInstall {
+		err := mcp.InstallMcpReferences()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Installation error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	s, _, _, _ := getStoreAndConfig()
 	defer s.Close()
+
+	// Start background index updater
+	go func() {
+		var updating bool
+		run := func() {
+			if updating {
+				return
+			}
+			updating = true
+			defer func() { updating = false }()
+			_, _ = s.RunUpdate("", nil)
+		}
+
+		// Run first update immediately
+		run()
+
+		// Then update regularly every 5 minutes
+		interval := 5 * time.Minute
+		if envVal := os.Getenv("QMD_UPDATE_INTERVAL"); envVal != "" {
+			if duration, err := time.ParseDuration(envVal); err == nil {
+				interval = duration
+			}
+		}
+		ticker := time.NewTicker(interval)
+		for range ticker.C {
+			run()
+		}
+	}()
 
 	if isHttp {
 		err := mcp.StartHttpServer(s, host, port)
