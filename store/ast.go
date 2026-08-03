@@ -21,6 +21,7 @@ const (
 	LangRust       SupportedLanguage = "rust"
 	LangSQL        SupportedLanguage = "sql"
 	LangKQL        SupportedLanguage = "kql"
+	LangLua        SupportedLanguage = "lua"
 	LangNone       SupportedLanguage = ""
 )
 
@@ -45,6 +46,8 @@ func detectLanguage(filePath string) SupportedLanguage {
 		return LangSQL
 	case ".kql", ".csl":
 		return LangKQL
+	case ".lua":
+		return LangLua
 	default:
 		return LangNone
 	}
@@ -80,6 +83,11 @@ var (
 
 	// KQL
 	kqlFuncRegex = regexp.MustCompile(`(?i)^\s*let\s+\w+\s*=\s*(\([^)]*\)\s*\{)?`)
+
+	// Lua
+	luaFuncRegex    = regexp.MustCompile(`^(local\s+)?function\s+\w+`)
+	luaTableRegex   = regexp.MustCompile(`^(local\s+)?\w+\s*=\s*\{\s*\}`)
+	luaRequireRegex = regexp.MustCompile(`\brequire\s*\(?["'][^"']+["']\)?`)
 )
 
 func GetASTBreakPoints(content string, filePath string) []BreakPoint {
@@ -101,6 +109,8 @@ func GetASTBreakPoints(content string, filePath string) []BreakPoint {
 		return getSqlBreakPoints(content)
 	case LangKQL:
 		return getKqlBreakPoints(content)
+	case LangLua:
+		return getLuaBreakPoints(content)
 	}
 
 	return nil
@@ -351,6 +361,31 @@ func getKqlBreakPoints(content string) []BreakPoint {
 
 		if kqlFuncRegex.MatchString(trimmed) {
 			points = append(points, BreakPoint{Pos: offset, Score: 90, Type: "ast:func"})
+		}
+
+		offset += len(line) + 1
+	}
+	return points
+}
+
+func getLuaBreakPoints(content string) []BreakPoint {
+	var points []BreakPoint
+	lines := strings.Split(content, "\n")
+	offset := 0
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			offset += len(line) + 1
+			continue
+		}
+
+		if luaTableRegex.MatchString(trimmed) {
+			points = append(points, BreakPoint{Pos: offset, Score: 100, Type: "ast:struct"})
+		} else if luaFuncRegex.MatchString(trimmed) {
+			points = append(points, BreakPoint{Pos: offset, Score: 90, Type: "ast:func"})
+		} else if luaRequireRegex.MatchString(trimmed) {
+			points = append(points, BreakPoint{Pos: offset, Score: 60, Type: "ast:import"})
 		}
 
 		offset += len(line) + 1

@@ -348,3 +348,41 @@ get_transactions("wire")
 		t.Error("missing kql func (let binding) point")
 	}
 }
+
+func TestGetASTBreakPointsLua(t *testing.T) {
+	luaSample := `local util = require("util")
+local M = {}
+
+local function private_func()
+    print("private")
+end
+
+function M.public_func(x)
+    return x * 2
+end
+
+return M
+`
+	points := GetASTBreakPoints(luaSample, "module.lua")
+	var hasImport, hasStruct, hasFunc bool
+	for _, p := range points {
+		switch p.Type {
+		case "ast:import":
+			hasImport = true
+		case "ast:struct":
+			hasStruct = true
+		case "ast:func":
+			hasFunc = true
+		}
+	}
+
+	if !hasImport {
+		t.Error("missing lua import point")
+	}
+	if !hasStruct {
+		t.Error("missing lua struct (module table) point")
+	}
+	if !hasFunc {
+		t.Error("missing lua func point")
+	}
+}
