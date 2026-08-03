@@ -21,10 +21,11 @@ type MultiGetFile struct {
 }
 
 type FormatOptions struct {
-	Full        bool
-	Query       string
-	UseColor    bool
-	LineNumbers bool
+	Full          bool
+	Query         string
+	UseColor      bool
+	LineNumbers   bool
+	ChunkStrategy string
 }
 
 func EscapeCSV(value string) string {
@@ -60,7 +61,7 @@ func SearchResultsToJson(results []store.SearchResult, opts FormatOptions) strin
 	for _, row := range results {
 		var snippetInfo *store.SnippetResult
 		if row.Body != "" {
-			info := store.ExtractSnippet(row.Body, opts.Query, 300)
+			info := store.ExtractSnippetWithStrategy(row.Body, opts.Query, 300, row.DisplayPath, opts.ChunkStrategy)
 			snippetInfo = &info
 		}
 
@@ -103,7 +104,7 @@ func SearchResultsToCsv(results []store.SearchResult, opts FormatOptions) string
 	sb.WriteString("docid,score,file,title,context,line,snippet\n")
 
 	for _, row := range results {
-		snippetInfo := store.ExtractSnippet(row.Body, opts.Query, 500)
+		snippetInfo := store.ExtractSnippetWithStrategy(row.Body, opts.Query, 500, row.DisplayPath, opts.ChunkStrategy)
 		content := snippetInfo.Snippet
 		if opts.Full {
 			content = row.Body
@@ -150,7 +151,7 @@ func SearchResultsToMarkdown(results []store.SearchResult, opts FormatOptions) s
 		if opts.Full {
 			content = row.Body
 		} else {
-			content = store.ExtractSnippet(row.Body, opts.Query, 500).Snippet
+			content = store.ExtractSnippetWithStrategy(row.Body, opts.Query, 500, row.DisplayPath, opts.ChunkStrategy).Snippet
 		}
 
 		if opts.LineNumbers {
@@ -191,7 +192,7 @@ func SearchResultsToXml(results []store.SearchResult, opts FormatOptions) string
 		if opts.Full {
 			content = row.Body
 		} else {
-			content = store.ExtractSnippet(row.Body, opts.Query, 500).Snippet
+			content = store.ExtractSnippetWithStrategy(row.Body, opts.Query, 500, row.DisplayPath, opts.ChunkStrategy).Snippet
 		}
 		if opts.LineNumbers {
 			content = store.AddLineNumbers(content, 1)

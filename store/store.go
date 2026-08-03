@@ -467,13 +467,21 @@ func (s *Store) ReindexCollection(
 }
 
 func (s *Store) SearchFTS(query string, limit int, collectionName string) ([]SearchResult, error) {
+	var collections []string
+	if collectionName != "" {
+		collections = []string{collectionName}
+	}
+	return s.SearchFTSMulti(query, limit, collections)
+}
+
+func (s *Store) SearchFTSMulti(query string, limit int, collections []string) ([]SearchResult, error) {
 	ftsQuery := BuildFTS5Query(query)
 	if ftsQuery == "" {
 		return nil, nil
 	}
 
 	ftsLimit := limit
-	if collectionName != "" {
+	if len(collections) > 0 {
 		ftsLimit = limit * 10
 	}
 
@@ -502,9 +510,13 @@ func (s *Store) SearchFTS(query string, limit int, collectionName string) ([]Sea
 	var params []interface{}
 	params = append(params, ftsQuery)
 
-	if collectionName != "" {
-		sqlStr += " AND d.collection = ?"
-		params = append(params, collectionName)
+	if len(collections) > 0 {
+		var placeholders []string
+		for _, col := range collections {
+			placeholders = append(placeholders, "?")
+			params = append(params, col)
+		}
+		sqlStr += " AND d.collection IN (" + strings.Join(placeholders, ", ") + ")"
 	}
 
 	sqlStr += " ORDER BY fm.bm25_score ASC LIMIT ?"
@@ -525,7 +537,6 @@ func (s *Store) SearchFTS(query string, limit int, collectionName string) ([]Sea
 			return nil, err
 		}
 
-		// Convert bm25 (negative, lower is better) into [0..1)
 		absScore := bm25Score
 		if absScore < 0 {
 			absScore = -absScore

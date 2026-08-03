@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 var binaryPath string
@@ -169,6 +171,30 @@ func TestCLIIntegration(t *testing.T) {
 		}
 		if !strings.Contains(stdout, "cleaned successfully") {
 			t.Errorf("unexpected cleanup output: %q", stdout)
+		}
+	})
+
+	t.Run("mcp http health", func(t *testing.T) {
+		cmd := exec.Command(binaryPath, "mcp", "--http", "--port", "8182")
+		cmd.Env = append(os.Environ(), "QMD_CONFIG_DIR="+tempDir)
+		err := cmd.Start()
+		if err != nil {
+			t.Fatalf("failed to start mcp server: %v", err)
+		}
+		defer cmd.Process.Kill()
+
+		// Wait a bit for server to start
+		time.Sleep(200 * time.Millisecond)
+
+		// Make request
+		resp, err := http.Get("http://localhost:8182/health")
+		if err != nil {
+			t.Fatalf("failed to query health endpoint: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("expected 200, got %d", resp.StatusCode)
 		}
 	})
 }

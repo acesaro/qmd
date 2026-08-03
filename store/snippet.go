@@ -89,3 +89,50 @@ func ExtractSnippet(body string, query string, maxLen int) SnippetResult {
 		SnippetLines: snippetLineCount,
 	}
 }
+
+func ExtractSnippetWithStrategy(body string, query string, maxLen int, filePath string, strategy string) SnippetResult {
+	if strategy == "auto" && filePath != "" && detectLanguage(filePath) != LangNone {
+		chunks := ChunkDocumentWithStrategy(body, filePath, "auto")
+		if len(chunks) > 0 {
+			queryTerms := strings.Fields(strings.ToLower(query))
+			bestIdx := 0
+			bestScore := -1.0
+			for i, chunk := range chunks {
+				chunkLower := strings.ToLower(chunk.Text)
+				score := 0.0
+				for _, term := range queryTerms {
+					if strings.Contains(chunkLower, term) {
+						score += 1.0
+					}
+				}
+				if score > bestScore {
+					bestScore = score
+					bestIdx = i
+				}
+			}
+			bestChunk := chunks[bestIdx]
+
+			startLine := 1
+			if bestChunk.Pos > 0 {
+				startLine = len(strings.Split(body[:bestChunk.Pos], "\n"))
+			}
+
+			res := ExtractSnippet(bestChunk.Text, query, maxLen)
+			res.Line = startLine + res.Line - 1
+
+			totalLines := len(strings.Split(body, "\n"))
+			res.LinesBefore = res.Line - 1
+			res.LinesAfter = totalLines - (res.Line + res.SnippetLines - 1)
+
+			header := fmt.Sprintf("@@ -%d,%d @@ (%d before, %d after)", res.Line, res.SnippetLines, res.LinesBefore, res.LinesAfter)
+
+			parts := strings.SplitN(res.Snippet, "\n", 2)
+			if len(parts) == 2 {
+				res.Snippet = header + "\n" + parts[1]
+			}
+
+			return res
+		}
+	}
+	return ExtractSnippet(body, query, maxLen)
+}

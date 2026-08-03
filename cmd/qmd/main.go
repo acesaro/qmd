@@ -10,6 +10,7 @@ import (
 
 	"github.com/acesaro/qmd/config"
 	"github.com/acesaro/qmd/formatter"
+	"github.com/acesaro/qmd/mcp"
 	"github.com/acesaro/qmd/store"
 )
 
@@ -49,6 +50,8 @@ func main() {
 		handleGet(args)
 	case "search", "s":
 		handleSearch(args)
+	case "mcp":
+		handleMcp(args)
 	case "cleanup", "clean":
 		handleCleanup(args)
 	case "help", "-h", "--help":
@@ -73,6 +76,7 @@ func printUsage() {
 	fmt.Println("  ls [collection]          List indexed files")
 	fmt.Println("  get <path|docid>         Retrieve document content")
 	fmt.Println("  search <query>           Search indexed files")
+	fmt.Println("  mcp                      Start MCP server (stdio/HTTP)")
 	fmt.Println("  cleanup                  Clean database and vacuum")
 }
 
@@ -978,6 +982,7 @@ func handleSearch(args []string) {
 	var collection string
 	full := false
 	lineNumbers := false
+	chunkStrategy := "regex"
 
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -996,6 +1001,11 @@ func handleSearch(args []string) {
 		} else if arg == "--collection" || arg == "-c" {
 			if i+1 < len(args) {
 				collection = args[i+1]
+				i++
+			}
+		} else if arg == "--chunk-strategy" {
+			if i+1 < len(args) {
+				chunkStrategy = args[i+1]
 				i++
 			}
 		} else if arg == "--json" {
@@ -1021,7 +1031,7 @@ func handleSearch(args []string) {
 
 	query := strings.Join(queryParts, " ")
 	if strings.TrimSpace(query) == "" {
-		fmt.Fprintln(os.Stderr, "Usage: qmd search <query> [--limit <n>] [--collection <c>] [--json|--csv|--xml|--md|--files]")
+		fmt.Fprintln(os.Stderr, "Usage: qmd search <query> [--limit <n>] [--collection <c>] [--chunk-strategy <auto|regex>] [--json|--csv|--xml|--md|--files]")
 		os.Exit(1)
 	}
 
@@ -1059,9 +1069,10 @@ func handleSearch(args []string) {
 	}
 
 	opts := formatter.FormatOptions{
-		Full:        full,
-		Query:       query,
-		LineNumbers: lineNumbers,
+		Full:          full,
+		Query:         query,
+		LineNumbers:   lineNumbers,
+		ChunkStrategy: chunkStrategy,
 	}
 
 	output := formatter.FormatSearchResults(filtered, format, opts)
@@ -1083,4 +1094,49 @@ func handleCleanup(args []string) {
 	fmt.Printf("%s✓%s Database cleaned successfully\n", cGreen, cReset)
 	fmt.Printf("  Removed %d inactive documents\n", inactiveDocs)
 	fmt.Printf("  Cleaned %d orphaned content hashes\n", orphanedHashes)
+}
+
+func handleMcp(args []string) {
+	isHttp := false
+	port := 8181
+	host := "localhost"
+
+	if h := os.Getenv("QMD_HOST"); h != "" {
+		host = h
+	}
+	if pStr := os.Getenv("QMD_PORT"); pStr != "" {
+		if p, err := strconv.Atoi(pStr); err == nil {
+			port = p
+		}
+	}
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--http" {
+			isHttp = true
+		} else if (arg == "--port" || arg == "-p") && i+1 < len(args) {
+			port, _ = strconv.Atoi(args[i+1])
+			i++
+		} else if (arg == "--host" || arg == "-h") && i+1 < len(args) {
+			host = args[i+1]
+			i++
+		}
+	}
+
+	s, _, _, _ := getStoreAndConfig()
+	defer s.Close()
+
+	if isHttp {
+		err := mcp.StartHttpServer(s, host, port)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "HTTP server error: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		err := mcp.StartStdioServer(s)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Stdio server error: %v\n", err)
+			os.Exit(1)
+		}
+	}
 }

@@ -233,8 +233,18 @@ func ChunkDocumentWithBreakPoints(
 }
 
 func ChunkDocument(content string) []Chunk {
+	return ChunkDocumentWithStrategy(content, "", "regex")
+}
+
+func ChunkDocumentWithStrategy(content string, filePath string, strategy string) []Chunk {
 	bps := ScanBreakPoints(content)
 	fences := FindCodeFences(content)
+	if strategy == "auto" && filePath != "" {
+		astBps := GetASTBreakPoints(content, filePath)
+		if len(astBps) > 0 {
+			bps = mergeBreakPoints(bps, astBps)
+		}
+	}
 	return ChunkDocumentWithBreakPoints(
 		content,
 		bps,

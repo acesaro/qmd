@@ -298,4 +298,17 @@ func TestSmartChunkingIntegration(t *testing.T) {
 			t.Errorf("expected first chunk to end at heading position %d, got length %d", headingPos, len(chunks[0].Text))
 		}
 	})
+
+	t.Run("chunkDocumentWithStrategy handles AST auto strategy", func(t *testing.T) {
+		code := `package main
+import "fmt"
+func processData() {
+	fmt.Println("processing")
+}
+`
+		chunks := ChunkDocumentWithStrategy(code, "main.go", "auto")
+		if len(chunks) == 0 {
+			t.Fatal("expected chunks, got 0")
+		}
+	})
 }
