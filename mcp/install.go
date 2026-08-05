@@ -25,10 +25,66 @@ func InstallMcpReferences() error {
 		return fmt.Errorf("failed to find user home directory: %v", err)
 	}
 
-	// 2. Install to antigravity CLI directory
-	antigravityMcpDir := filepath.Join(homeDir, ".gemini", "antigravity-cli", "mcp", "qmd")
-	if err := os.MkdirAll(antigravityMcpDir, 0755); err != nil {
-		return fmt.Errorf("failed to create antigravity MCP directory: %v", err)
+	// 2. Install to Antigravity plugin directory (~/.gemini/config/plugins/qmd/)
+	pluginDir := filepath.Join(homeDir, ".gemini", "config", "plugins", "qmd")
+	if err := os.MkdirAll(pluginDir, 0755); err != nil {
+		return fmt.Errorf("failed to create plugin directory: %v", err)
+	}
+
+	// Create subdirectories for skills, references and mcp schemas
+	skillsDir := filepath.Join(pluginDir, "skills", "qmd")
+	referencesDir := filepath.Join(skillsDir, "references")
+	mcpDir := filepath.Join(pluginDir, "mcp", "qmd")
+
+	for _, dir := range []string{skillsDir, referencesDir, mcpDir} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("failed to create directory %s: %v", dir, err)
+		}
+	}
+
+	// Write plugin.json
+	pluginJson := map[string]string{
+		"name":        "qmd",
+		"description": "Search and retrieve documents from local markdown files.",
+	}
+	pluginJsonData, err := json.MarshalIndent(pluginJson, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal plugin.json: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(pluginDir, "plugin.json"), pluginJsonData, 0644); err != nil {
+		return fmt.Errorf("failed to write plugin.json: %v", err)
+	}
+
+	// Write mcp_config.json
+	type McpServerConfig struct {
+		Command string   `json:"command"`
+		Args    []string `json:"args"`
+	}
+	type McpConfig struct {
+		McpServers map[string]McpServerConfig `json:"mcpServers"`
+	}
+	mcpCfg := McpConfig{
+		McpServers: map[string]McpServerConfig{
+			"qmd": {
+				Command: execPath,
+				Args:    []string{"mcp"},
+			},
+		},
+	}
+	mcpCfgData, err := json.MarshalIndent(mcpCfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal mcp_config.json: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(pluginDir, "mcp_config.json"), mcpCfgData, 0644); err != nil {
+		return fmt.Errorf("failed to write mcp_config.json: %v", err)
+	}
+
+	// Write skill and reference markdown files
+	if err := os.WriteFile(filepath.Join(skillsDir, "SKILL.md"), []byte(SkillMd), 0644); err != nil {
+		return fmt.Errorf("failed to write SKILL.md: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(referencesDir, "mcp-setup.md"), []byte(McpSetupMd), 0644); err != nil {
+		return fmt.Errorf("failed to write mcp-setup.md: %v", err)
 	}
 
 	schemas := map[string]string{
@@ -115,15 +171,17 @@ Use query for keyword searches, get to retrieve full content, multi_get to load 
 	}
 
 	for filename, schema := range schemas {
-		schemaPath := filepath.Join(antigravityMcpDir, filename)
+		schemaPath := filepath.Join(mcpDir, filename)
 		if err := os.WriteFile(schemaPath, []byte(schema), 0644); err != nil {
-			return fmt.Errorf("failed to write %s to antigravity MCP directory: %v", filename, err)
+			return fmt.Errorf("failed to write %s to plugin MCP directory: %v", filename, err)
 		}
 	}
-	fmt.Printf("✓ Installed QMD MCP server schemas to antigravity CLI (~/.gemini/antigravity-cli/mcp/qmd/)\n")
+	fmt.Printf("✓ Installed QMD plugin and MCP server schemas to Antigravity CLI (~/.gemini/config/plugins/qmd/)\n")
 
 	// 3. Configure other GenAI harnesses JSON files
 	configs := []string{
+		// Antigravity CLI (agy) global configuration
+		filepath.Join(homeDir, ".gemini", "config", "mcp_config.json"),
 		// Claude Desktop
 		filepath.Join(homeDir, "Library", "Application Support", "Claude", "claude_desktop_config.json"),
 		filepath.Join(homeDir, ".config", "Claude", "claude_desktop_config.json"),
