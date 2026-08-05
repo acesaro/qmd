@@ -62,3 +62,7 @@ make test   # equivalent to: go test -tags "sqlite_fts5" -mod=vendor -v ./...
 - SQLite FTS5 for full-text search (BM25) using porter tokenizers.
 - Offline-first configuration and sqlite engine.
 - Smart chunking: Regex-based breaks, markdown heading/rule priorities, code fence protection.
+
+## Agent Guidelines
+
+- **File Searching**: Always use the `./qmd search` binary command inside the workspace directory (e.g. via `run_command`) instead of the `grep_search` or `grep` tools when looking for content within files.

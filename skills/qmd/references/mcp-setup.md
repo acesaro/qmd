@@ -1,11 +1,15 @@
-# QMD MCP Server Setup
+# QMD MCP Server Setup (Go Port)
 
 ## Install
 
+Build the Go binary and place it in your system PATH:
+
 ```bash
-npm install -g @tobilu/qmd
+go build -tags "sqlite_fts5" -mod=vendor -o qmd ./cmd/qmd
+# Put 'qmd' binary in your PATH
+qmd init
 qmd collection add ~/path/to/markdown --name myknowledge
-qmd embed
+qmd update
 ```
 
 ## Configure MCP Client
@@ -43,53 +47,46 @@ qmd embed
 
 ```bash
 qmd mcp --http              # Port 8181
-qmd mcp --http --daemon     # Background
-qmd mcp stop                # Stop daemon
 ```
 
 ## Tools
 
 ### query
 
-Search with pre-expanded queries.
+Search indexed collections using SQLite FTS5 BM25 search.
 
 ```json
 {
-  "searches": [
-    { "type": "lex", "query": "keyword phrases" },
-    { "type": "vec", "query": "natural language question" },
-    { "type": "hyde", "query": "hypothetical answer passage..." }
-  ],
+  "query": "keyword phrases",
   "limit": 10,
-  "collection": "optional",
+  "collections": ["myknowledge"],
   "minScore": 0.0
 }
 ```
 
-| Type | Method | Input |
-|------|--------|-------|
-| `lex` | BM25 | Keywords (2-5 terms) |
-| `vec` | Vector | Question |
-| `hyde` | Vector | Answer passage (50-100 words) |
+Note: If `searches` is specified instead of `query`, the server joins the sub-queries with spaces and runs a unified FTS5 search. Vector/semantic queries are not supported.
 
 ### get
 
-Retrieve document by path or `#docid`.
+Retrieve document content by file path or docid, supporting line number ranges.
 
 | Param | Type | Description |
 |-------|------|-------------|
-| `path` | string | File path or `#docid` |
-| `full` | bool? | Return full content |
-| `lineNumbers` | bool? | Add line numbers |
+| `file` | string | File path or docid from search results (supports suffix like :100 or :100:40) |
+| `fromLine` | number? | Start from this line number (1-indexed) |
+| `maxLines` | number? | Maximum number of lines to return |
+| `lineNumbers` | boolean? | Add line numbers to output (default true) |
 
 ### multi_get
 
-Retrieve multiple documents.
+Retrieve multiple documents by glob pattern or comma-separated list.
 
 | Param | Type | Description |
 |-------|------|-------------|
-| `pattern` | string | Glob or comma-separated list |
-| `maxBytes` | number? | Skip large files (default 64KB) |
+| `pattern` | string | Glob pattern or comma-separated list of file paths |
+| `maxLines` | number? | Maximum lines per file |
+| `maxBytes` | number? | Skip files larger than this (default 10240 bytes) |
+| `lineNumbers` | boolean? | Add line numbers to output (default true) |
 
 ### status
 
@@ -97,6 +94,5 @@ Index health and collections. No params.
 
 ## Troubleshooting
 
-- **Not starting**: `which qmd`, `qmd mcp` manually
-- **No results**: `qmd collection list`, `qmd embed`
-- **Slow first search**: Normal, models loading (~3GB)
+- **Not starting**: `which qmd`, check PATH, or run `qmd mcp` manually.
+- **No results**: Run `qmd collection list` and `qmd update`.
